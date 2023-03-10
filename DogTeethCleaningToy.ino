@@ -152,7 +152,7 @@ void buzzSet(byte volume, byte duration) {
         analogWrite(PWM_BUZZER, volume);
         delay(500);  
         analogWrite(PWM_BUZZER, 0);
-        delay(50);  
+        delay(500);  
     }
 }
 
