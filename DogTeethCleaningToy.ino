@@ -3,6 +3,11 @@
 #include <avr/sleep.h>
 #include <DS3231.h>
 
+/********************
+    arduino testing
+    ver 0.5
+********************/
+
 /* pin def */
 #define RST_N 1
 #define INT0 3
@@ -98,7 +103,7 @@ void loop() {
         delay(1000); // changing status in a secondly basis
         pressure = max(max(analogRead(PRESSURE_1),analogRead(PRESSURE_2)), analogRead(PRESSURE_3));
     } while (pressure > PRES_THRESHOLD && remTime > 0);
-    vibSet(0);
+    vibSet(255); // pmos 255->disconnect
 
     /* COMPLETE state */
     if (!remTime && !buz_treat_flag) {
@@ -112,9 +117,9 @@ void loop() {
 
 /* func def */
 void ledSet(byte r, byte g, byte b) { 
-    analogWrite(PWM_R, r);
-    analogWrite(PWM_G, g);
-    analogWrite(PWM_B, b);
+    analogWrite(PWM_R, 255-r);
+    analogWrite(PWM_G, 255-g);
+    analogWrite(PWM_B, 255-b);
 }
 
 void vibSet(byte dutyCycle) {
@@ -124,7 +129,7 @@ void vibSet(byte dutyCycle) {
 byte memSet(byte val, int addr, byte mode) {
     byte time = EEPROM.read(addr);
     switch (mode) {
-        case 0: time = val; // reset
+        case 0: time = val; break; // reset
         case 1: time = (time>=val) ? time-val : 0; break; // sub
         case 2: time += val; break; // add
         default: time = 0;
@@ -133,13 +138,14 @@ byte memSet(byte val, int addr, byte mode) {
     return time;
 }
 
-void alarmSet() {
-    sleep_disable();
-    ledSet(255, 0, 0); // RED for IDLE
-    memSet(TIME_BRUSH_MAX, TIME_ADDR, 0);
-    rtc.setAlarm(0b1100);
-    sleepSet(SLEEP_MODE_ADC);
-}
+// pcb error
+// void alarmSet() {
+//     sleep_disable();
+//     ledSet(255, 0, 0); // RED for IDLE
+//     memSet(TIME_BRUSH_MAX, TIME_ADDR, 0);
+//     rtc.setAlarm(0b1100);
+//     sleepSet(SLEEP_MODE_ADC);
+// }
 
 void buzzSet(byte volume, byte duration) {
     for (int i = 0; i < duration; i ++) {

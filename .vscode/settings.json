@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.ino": "c",
+        "eeprom.h": "c",
+        "sleep.h": "c"
+    }
+}
