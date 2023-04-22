@@ -1,110 +1,141 @@
-#include <DS3231.h>
-#include <avr/io.h>
+#include <avr/sleep.h>
+#include <avr/power.h>
+#include <avr/wdt.h>
 
-// myRTC interrupt pin
-#define CLINT PD2
+#define LED_PIN 5
 
-// Setup clock
-DS3231 myRTC;
+volatile int f_wdt=1;
+volatile int count=0;
 
-// Variables for use in method parameter lists
-byte alarmDay;
-byte alarmHour;
-byte alarmMinute;
-byte alarmSecond;
-byte alarmBits;
-bool alarmDayIsDay;
-bool alarmH12;
-bool alarmPM;
 
-// Interrupt signaling byte
-volatile byte tick = 1;
 
-void setup() {
-    // Begin I2C communication
-    Wire.begin();
+/***************************************************
+ *  Name:        ISR(WDT_vect)
+ *
+ *  Returns:     Nothing.
+ *
+ *  Parameters:  None.
+ *
+ *  Description: Watchdog Interrupt Service. This
+ *               is executed when watchdog timed out.
+ *
+ ***************************************************/
+ISR(WDT_vect)
+{
+ if (count < 2){
+   count ++;
+ } else {
+   f_wdt = 1;
+   count = 0;
+ }
+}
 
-    // Begin Serial communication
-    // Serial.begin(9600);
-    // while (!Serial);
-    // Serial.println();
-    // Serial.println("Starting Serial");
 
-    // Assign parameter values for Alarm 1
-    alarmDay = 0;
-    alarmHour = 0;
-    alarmMinute = 0;
-    alarmSecond = 0;
-    alarmBits = 0b00001111; // Alarm 1 every second
-    alarmDayIsDay = false;
-    alarmH12 = false;
-    alarmPM = false;    
+/***************************************************
+ *  Name:        enterSleep
+ *
+ *  Returns:     Nothing.
+ *
+ *  Parameters:  None.
+ *
+ *  Description: Enters the arduino into sleep mode.
+ *
+ ***************************************************/
+void enterSleep(void)
+{
+  set_sleep_mode(SLEEP_MODE_PWR_DOWN);   /* EDIT: could also use SLEEP_MODE_PWR_DOWN for lowest power consumption. */
+  sleep_enable();
+  
+  /* Now enter sleep mode. */
+  sleep_mode();
+  
+  /* The program will continue from here after the WDT timeout*/
+  sleep_disable(); /* First thing to do is disable sleep. */
+  
+  /* Re-enable the peripherals. */
+  // power_all_enable();
+}
 
-    // Set alarm 1 to fire at one-second intervals
-    myRTC.turnOffAlarm(1);
-    myRTC.setA1Time(
-       alarmDay, alarmHour, alarmMinute, alarmSecond,
-       alarmBits, alarmDayIsDay, alarmH12, alarmPM);
-    // enable Alarm 1 interrupts
-    myRTC.turnOnAlarm(1);
-    // clear Alarm 1 flag
-    myRTC.checkIfAlarm(1);
 
-    // When using interrupt with only one of the DS3231 alarms, as in this example,
-    // it may be advisable to prevent the other alarm entirely,
-    // so it will not covertly block the outgoing interrupt signal.
 
-    // Prevent Alarm 2 altogether by assigning a 
-    // nonsensical alarm minute value that cannot match the clock time,
-    // and an alarmBits value to activate "when minutes match".
-    alarmMinute = 0xFF; // a value that will never match the time
-    alarmBits = 0b01100000; // Alarm 2 when minutes match, i.e., never
+/***************************************************
+ *  Name:        setup
+ *
+ *  Returns:     Nothing.
+ *
+ *  Parameters:  None.
+ *
+ *  Description: Setup for the serial comms and the
+ *                Watch dog timeout. 
+ *
+ ***************************************************/
+void setup()
+{
+  Serial.begin(9600);
+  Serial.println("Initialising...");
+  delay(100); //Allow for serial print to complete.
+
+  pinMode(LED_PIN,OUTPUT);
+
+  /*** Setup the WDT ***/
+  
+  /* Clear the reset flag. */
+  MCUSR &= ~(1<<WDRF);
+  
+  /* In order to change WDE or the prescaler, we need to
+   * set WDCE (This will allow updates for 4 clock cycles).
+   */
+  WDTCSR |= (1<<WDCE) | (1<<WDE);
+
+  /* set new watchdog timeout prescaler value */
+  WDTCSR = 1<<WDP0 | 1<<WDP3; /* 8.0 seconds */
+  
+  /* Enable the WD interrupt (note no reset). */
+  WDTCSR |= _BV(WDIE);
+  
+  Serial.println("Initialisation complete.");
+  delay(100); //Allow for serial print to complete.
+}
+
+
+
+/***************************************************
+ *  Name:        enterSleep
+ *
+ *  Returns:     Nothing.
+ *
+ *  Parameters:  None.
+ *
+ *  Description: Main application loop.
+ *
+ ***************************************************/
+void loop()
+{
+  if(f_wdt == 1)
+  {
+    /* Toggle the LED */
+    digitalWrite(6, LOW);
+    digitalWrite(LED_PIN, !digitalRead(LED_PIN));
     
-    // Upload the parameters to prevent Alarm 2 entirely
-    myRTC.setA2Time(
-        alarmDay, alarmHour, alarmMinute,
-        alarmBits, alarmDayIsDay, alarmH12, alarmPM);
-    // disable Alarm 2 interrupt
-    myRTC.turnOffAlarm(2);
-    // clear Alarm 2 flag
-    myRTC.checkIfAlarm(2);
-
-    // NOTE: both of the alarm flags must be clear
-    // to enable output of a FALLING interrupt
-
-    // attach clock interrupt
-    // pinMode(CLINT, INPUT_PULLUP);
-    // attachInterrupt(digitalPinToInterrupt(CLINT), isr_TickTock, FALLING);
-
-    // Use builtin LED to blink
-    // pinMode(LED_BUILTIN, OUTPUT);
-    DDRD |= 0b00001000;
-    sei();
-    PIND |= 0b00000100;
-}
-
-void loop() {
-    // static variable to keep track of LED on/off state
-    static byte state = false;
-
-    // if alarm went of, do alarm stuff
-    if (tick) {
-        tick = 0;
-        state = ~state;
-        PORTD |= 0b00001000;
-
-        // optional serial output
-        // Serial.print("Turning LED ");
-        // Serial.println((state ? "ON" : "OFF"));
-
-        // Clear Alarm 1 flag
-        myRTC.checkIfAlarm(1);
-    }
-
-    // Loop delay to emulate other running code
-    delay(10);
-}
-
-ISR(INT0_vect) {
-  tick = 1;
+    /* Don't forget to clear the flag. */
+    f_wdt = 0;
+    
+      /* Re-enter sleep mode. */
+    set_sleep_mode(SLEEP_MODE_PWR_DOWN);   /* EDIT: could also use SLEEP_MODE_PWR_DOWN for lowest power consumption. */
+    sleep_enable();
+    
+    /* Now enter sleep mode. */
+    while(count < 2)
+      sleep_mode();
+    
+    /* The program will continue from here after the WDT timeout*/
+    sleep_disable(); /* First thing to do is disable sleep. */
+    
+    /* Re-enable the peripherals. */
+    // power_all_enable();
+  }
+  else
+  {
+    digitalWrite(6, HIGH);
+  }
 }

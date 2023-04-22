@@ -28,18 +28,19 @@
 
 /* constant define */
 #define MAX_BYTE 0xff
-#define PRES_THRESHOLD 0x33
+#define PRES_THRESHOLD 0x1e
 #define REVOLSTEP 200
 #define TIME_ADDR 0
 #define BUZZ_VOL 127
 #define BUZZ_DUR 3
-#define INT_FREQ 30UL
+#define INT_FREQ 60UL
 
 byte speed;
 float subTime;
 float remTime;
 const float sessionTime = 10.0;
 bool buz_treat_flag = false;
+volatile int f_wdt = 0;
 lowStepper myStepper(REVOLSTEP, DIG_STEP_A, DIG_STEP_C, DIG_STEP_B, DIG_STEP_D);
 
 DS3231 myRTC;
@@ -66,6 +67,7 @@ byte speedControl(byte pressure);
 void extSetup(byte stepperSpeed);
 void timerSetup();
 void alarmSet();
+void wdSet();
 void sleepSet();
 void wakeUp();
 
@@ -90,9 +92,10 @@ void setup() {
 
   // make sure to set all PWM to high as default
   extSetup(20);
-  timerSetup();
+  wdSet();
+  // timerSetup();
   remTime = memSet(sessionTime, TIME_ADDR, 0);
-  attachInterrupt(digitalPinToInterrupt(INT0), wakeUp, FALLING);
+  // attachInterrupt(digitalPinToInterrupt(INT0), wakeUp, FALLING);
 }
 
 void loop() {
@@ -103,8 +106,13 @@ void loop() {
   while(maxPressure < PRES_THRESHOLD) {
     if (tick) {
       tick = 0;
+      WDTCSR &= ~(_BV(WDIE));
       remTime = memSet(sessionTime, TIME_ADDR, 0);
-      alarmSet();
+      WDTCSR |= _BV(WDIE);
+      // alarmSet();
+      ledSet_Pmos(0, 0, 0);
+      delay(500);
+      ledSet_Pmos(MAX_BYTE, 0, 0);
     }
     // delay(1000);
     presRead(&p1, &p2, &p3);
@@ -157,11 +165,12 @@ void ledSet_Pmos(byte r, byte g, byte b) {
 byte speedControl(byte pressure) {
   // 85% inverted minimum
   // 24% inverted max
-  byte speed = (pressure >> 1) + 51;
-  if(speed > 179)
-    speed = 179;
+  byte speed = float(pressure) / 256.0 * 480;
+  if(speed > 153)
+    speed = 153;
   else if(speed < 51)
     speed = 51;
+  // byte speed = 100;
   return speed;
 }
 void vibSet(byte dutyCycle) {
@@ -289,7 +298,7 @@ void alarmSet() {
   myRTC.turnOnAlarm(1);
   // clear Alarm 1 flag again after enabling interrupts
   myRTC.checkIfAlarm(1);
-  attachInterrupt(digitalPinToInterrupt(INT0), wakeUp, FALLING);
+  // attachInterrupt(digitalPinToInterrupt(INT0), wakeUp, FALLING);
   buz_treat_flag = false;
 }
 
@@ -299,17 +308,41 @@ void sleepSet(){
   // attachInterrupt(digitalPinToInterrupt(INT0), wakeUp, FALLING);
   set_sleep_mode(SLEEP_MODE_PWR_DOWN);
   ledSet(HIGH, HIGH, HIGH);
-  delay(1000);
-  sleep_cpu();
+  delay(500);
+  do{
+    sleep_cpu();
+  } while (tick != 1);
+  sleep_disable();
   // SLEEP POINT
+  WDTCSR &= ~(_BV(WDIE));
   remTime = memSet(sessionTime, TIME_ADDR, 0);
-  alarmSet();
+  WDTCSR |= _BV(WDIE);
+  // alarmSet();
   tick = 0;
+  buz_treat_flag = false;
 }
 
 /* IRQ handler */
 void wakeUp() {
-  sleep_disable();
+  if(buz_treat_flag)
+    sleep_disable();
   detachInterrupt(digitalPinToInterrupt(INT0));
   tick = 1;
+}
+
+void wdSet() {
+  MCUSR &= ~(1<<WDRF);
+  WDTCSR |= (1<<WDCE) | (1<<WDE);
+  WDTCSR = 1<<WDP0 | 1<<WDP3; /* 8.0 seconds */
+  WDTCSR |= _BV(WDIE);
+}
+
+ISR(WDT_vect)
+{
+  if(f_wdt < 7) {
+    f_wdt ++;
+  } else {
+    tick = 1;
+    f_wdt = 0;
+  }
 }
