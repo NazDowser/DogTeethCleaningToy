@@ -4,8 +4,8 @@
 #include <DS3231.h>
 
 /********************
-    arduino testing
-    ver 1.0
+    Dog Teeth Cleaning Toy
+    ver 1.1
 ********************/
 
 /* pin def */
